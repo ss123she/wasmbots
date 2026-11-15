@@ -129,6 +129,7 @@ export function createArenaRenderer(container: HTMLElement) {
     controls,
     render: () => {
       controls.update();
+      composer.render();
     },
     dispose: () => {
       ro.disconnect();

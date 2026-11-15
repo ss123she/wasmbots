@@ -2,14 +2,13 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { ArenaSnapshot, BulletView, OrbView } from "./types";
+import { MeshPool, createArenaRenderer, setPos } from "./renderer";
 import {
-  MeshPool,
-  createArenaRenderer,
-  degToRad,
-  lerpAngle,
-  setPos,
-  toPos,
-} from "./renderer";
+  BotVisual,
+  createBotVisual,
+  removeBotVisual,
+  updateBotVisual,
+} from "./bot-mesh";
 
 interface ArenaSceneProps {
   snapshot: ArenaSnapshot | null;
@@ -36,11 +35,7 @@ export default function ArenaScene({
     const arena = createArenaRenderer(container);
     const { scene, controls } = arena;
 
-    const shipGeo = new THREE.ConeGeometry(14, 34, 4).rotateZ(-Math.PI / 2);
-    const bots = new Map<
-      number,
-      { mesh: THREE.Mesh; mat: THREE.MeshStandardMaterial }
-    >();
+    const bots = new Map<number, BotVisual>();
 
     const bullets = new MeshPool<BulletView>(
       scene,
@@ -68,11 +63,10 @@ export default function ArenaScene({
     );
 
     let rafId = 0;
-    const clock = new THREE.Timer();
 
     const animate = () => {
       rafId = requestAnimationFrame(animate);
-      const t = clock.getElapsed();
+      const t = performance.now() * 0.001;
       const snap = latestRef.current;
 
       if (snap) {
@@ -81,44 +75,19 @@ export default function ArenaScene({
         for (const bot of snap.bots) {
           active.add(bot.id);
           let entry = bots.get(bot.id);
-
           if (!entry) {
-            const mat = new THREE.MeshStandardMaterial({
-              color: bot.color,
-              emissive: bot.color,
-              emissiveIntensity: 1.6,
-              metalness: 0.4,
-              roughness: 0.2,
-            });
-            const mesh = new THREE.Mesh(shipGeo, mat);
-            setPos(mesh.position, bot);
-            mesh.rotation.y = degToRad(bot.angle);
-            scene.add(mesh);
-            entry = { mesh, mat };
+            entry = createBotVisual(scene, bot);
             bots.set(bot.id, entry);
           }
-
-          entry.mesh.position.lerp(toPos(bot), 0.35);
-          entry.mesh.rotation.y = lerpAngle(
-            entry.mesh.rotation.y,
-            degToRad(bot.angle),
-            0.35,
-          );
-
-          const col = bot.overheated ? "#ef4444" : bot.color;
-          entry.mat.color.set(col);
-          entry.mat.emissive.set(col);
-          entry.mat.emissiveIntensity = bot.overheated ? 3.0 : 1.6;
-
+          updateBotVisual(entry, bot, t);
           if (followRef.current === bot.id) {
-            controls.target.lerp(entry.mesh.position, 0.1);
+            controls.target.lerp(entry.group.position, 0.1);
           }
         }
 
         for (const [id, entry] of bots) {
           if (!active.has(id)) {
-            scene.remove(entry.mesh);
-            entry.mat.dispose();
+            removeBotVisual(scene, entry);
             bots.delete(id);
           }
         }
@@ -138,6 +107,7 @@ export default function ArenaScene({
 
     return () => {
       cancelAnimationFrame(rafId);
+      bots.forEach((entry) => removeBotVisual(scene, entry));
       arena.dispose();
     };
   }, []);

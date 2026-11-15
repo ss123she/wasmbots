@@ -1,11 +1,17 @@
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? `http://${window.location.hostname}:8000`;
+function getApiBase() {
+  return (
+    process.env.NEXT_PUBLIC_API_URL ?? `http://${window.location.hostname}:8000`
+  );
+}
 
-export const WS_URL =
-  process.env.NEXT_PUBLIC_WS_URL ?? `ws://${window.location.hostname}:8000/ws`;
+export function getWsUrl() {
+  return (
+    process.env.NEXT_PUBLIC_WS_URL ?? `ws://${window.location.hostname}:8000/ws`
+  );
+}
 
 async function post(path: string, body?: ArrayBuffer) {
-  const res = await fetch(`${API_BASE}${path}`, { method: "POST", body });
+  const res = await fetch(`${getApiBase()}${path}`, { method: "POST", body });
   if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
 }
 

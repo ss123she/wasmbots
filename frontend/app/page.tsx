@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import ArenaScene from "./scene";
 import { ArenaSnapshot } from "./types";
-import { WS_URL, api } from "./api";
+import { api, getWsUrl } from "./api";
 
 export default function ArenaPage() {
   const [snapshot, setSnapshot] = useState<ArenaSnapshot | null>(null);
@@ -13,18 +13,48 @@ export default function ArenaPage() {
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    const ws = new WebSocket(WS_URL);
-    ws.onopen = () => setWsStatus("connected");
-    ws.onerror = () => setWsStatus("error");
-    ws.onclose = () => setWsStatus("closed");
-    ws.onmessage = (ev) => {
-      const data: ArenaSnapshot = JSON.parse(ev.data);
-      setSnapshot(data);
-      if (data.events?.length) {
-        setEvents((prev) => [...data.events, ...prev].slice(0, 12));
+    let disposed = false;
+    let ws: WebSocket | null = null;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const connect = () => {
+      if (disposed) return;
+      setWsStatus("connecting...");
+      const sock = new WebSocket(getWsUrl());
+      ws = sock;
+
+      sock.onopen = () => {
+        if (disposed) {
+          sock.close();
+          return;
+        }
+        setWsStatus("connected");
+      };
+      sock.onerror = () => !disposed && setWsStatus("error");
+      sock.onclose = () => {
+        if (disposed) return;
+        setWsStatus("closed");
+        timer = setTimeout(connect, 1500);
+      };
+      sock.onmessage = (ev) => {
+        if (disposed) return;
+        const data: ArenaSnapshot = JSON.parse(ev.data);
+        setSnapshot(data);
+        if (data.events?.length) {
+          setEvents((prev) => [...data.events, ...prev].slice(0, 12));
+        }
+      };
+    };
+
+    connect();
+
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
       }
     };
-    return () => ws.close();
   }, []);
 
   async function run(action: () => Promise<void>) {
