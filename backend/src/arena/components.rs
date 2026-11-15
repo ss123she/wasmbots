@@ -3,6 +3,8 @@ use hecs::Entity;
 
 use crate::{arena::modules::Module, wasm::sandbox::BotRuntime};
 
+const HULL_DEATH_RATIO: f32 = 0.45;
+
 pub struct Pos(pub Vec2);
 pub struct Vel(pub Vec2);
 
@@ -32,11 +34,11 @@ impl Hull {
     }
 
     pub fn is_dead(&self) -> bool {
-        self.core_hp() <= 0.0 || self.total_hp() <= self.max_total_hp() * 0.45
+        self.core_hp() <= 0.0 || self.total_hp() <= self.max_total_hp() * HULL_DEATH_RATIO
     }
 
     pub fn hp_display(&self) -> f32 {
-        let min_hp = self.max_total_hp() * 0.45;
+        let min_hp = self.max_total_hp() * HULL_DEATH_RATIO;
         let hull_pct =
             ((self.total_hp() - min_hp) / (self.max_total_hp() - min_hp)).clamp(0.0, 1.0);
         let core_pct = self
