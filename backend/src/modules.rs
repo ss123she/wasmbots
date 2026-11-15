@@ -33,10 +33,10 @@ impl ModuleKind {
         match self {
             Self::Core => (0, 60.0, 2.0),
             Self::Armor => (10, 90.0, 2.5),
-            ModuleKind::Thruster => (20, 25.0, 1.0),
-            ModuleKind::Cannon => (30, 30.0, 1.5),
-            ModuleKind::Radar => (15, 20.0, 0.8),
-            ModuleKind::Reactor => (25, 25.0, 1.5),
+            Self::Thruster => (20, 25.0, 1.0),
+            Self::Cannon => (30, 30.0, 1.5),
+            Self::Radar => (15, 20.0, 0.8),
+            Self::Reactor => (25, 25.0, 1.5),
         }
     }
 }
@@ -58,8 +58,8 @@ pub struct ModuleState {
 
 #[derive(Clone, Copy, Debug)]
 pub struct ModuleSnapshot {
-    pub gx: f32,
-    pub gy: f32,
+    pub gx: i32,
+    pub gy: i32,
     pub kind: ModuleKind,
     pub dir: f32,
     pub hp: f32,

@@ -21,8 +21,10 @@ use tower_http::cors::CorsLayer;
 use crate::world::World;
 
 mod geom;
+mod host;
 mod modules;
 mod sandbox;
+mod snapshot;
 mod world;
 
 #[derive(Clone)]
