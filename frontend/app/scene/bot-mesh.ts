@@ -19,7 +19,9 @@ const GEOS = {
 
 interface ModuleVisual {
   root: THREE.Group;
+  mat: THREE.MeshStandardMaterial;
   spinner?: THREE.Object3D;
+  pulseMesh?: THREE.Object3D;
 }
 
 export interface BotVisual {
@@ -32,45 +34,51 @@ export interface BotVisual {
 function buildModule(
   m: ModuleView,
   mainMat: THREE.MeshStandardMaterial,
-  accentMat: THREE.MeshStandardMaterial,
+  baseAccentMat: THREE.MeshStandardMaterial,
 ): ModuleVisual {
   const root = new THREE.Group();
   root.position.set(m.gx * CELL_SIZE, 0, m.gy * CELL_SIZE);
   root.rotation.y = degToRad(m.dir);
 
+  const mat = baseAccentMat.clone();
+
   switch (m.kind) {
-    case ModuleKind.Core:
-      root.add(new THREE.Mesh(GEOS.core, accentMat));
-      return { root };
+    case ModuleKind.Core: {
+      const core = new THREE.Mesh(GEOS.core, mat);
+      root.add(core);
+      return { root, mat, spinner: core };
+    }
 
     case ModuleKind.Armor:
-      root.add(new THREE.Mesh(GEOS.armor, accentMat));
-      return { root };
+      root.add(new THREE.Mesh(GEOS.armor, mat));
+      return { root, mat };
 
     case ModuleKind.Thruster:
-      root.add(new THREE.Mesh(GEOS.thruster, accentMat));
-      return { root };
+      root.add(new THREE.Mesh(GEOS.thruster, mat));
+      return { root, mat };
 
     case ModuleKind.Cannon: {
-      const barrel = new THREE.Mesh(GEOS.cannonBarrel, accentMat);
+      const barrel = new THREE.Mesh(GEOS.cannonBarrel, mat);
       barrel.position.set(5, 1.5, 0);
       root.add(new THREE.Mesh(GEOS.cannonBase, mainMat), barrel);
-      return { root };
+      return { root, mat };
     }
 
     case ModuleKind.Radar: {
-      const dish = new THREE.Mesh(GEOS.radarDish, accentMat);
+      const dish = new THREE.Mesh(GEOS.radarDish, mat);
       dish.position.y = 4.5;
       root.add(new THREE.Mesh(GEOS.radarMast, mainMat), dish);
-      return { root, spinner: dish };
+      return { root, mat, spinner: dish };
     }
 
-    case ModuleKind.Reactor:
-      root.add(new THREE.Mesh(GEOS.reactor, accentMat));
-      return { root };
+    case ModuleKind.Reactor: {
+      const reactor = new THREE.Mesh(GEOS.reactor, mat);
+      root.add(reactor);
+      return { root, mat, pulseMesh: reactor };
+    }
 
     default:
-      return { root };
+      return { root, mat };
   }
 }
 
@@ -118,11 +126,32 @@ export function updateBotVisual(entry: BotVisual, bot: BotView, t: number) {
   entry.accentMat.emissive.set(col);
   entry.mat.emissiveIntensity = bot.overheated ? 2.5 : 0.7;
 
+  const baseColor = bot.overheated ? "#ef4444" : bot.color;
+
   bot.modules.forEach((m, i) => {
     const vis = entry.modules[i];
     if (!vis) return;
+
     vis.root.visible = m.hp_pct > 0;
-    if (vis.spinner) vis.spinner.rotation.y = t * 4 + i;
+    if (!vis.root.visible) return;
+
+    const dmg = 1 - m.hp_pct;
+    const lowHpFlicker =
+      m.hp_pct < 0.36 && Math.sin(t * 25 + i * 3) > 0.4 ? 0.35 : 1.0;
+
+    vis.mat.emissive
+      .set(baseColor)
+      .lerp(new THREE.Color("#ef4444"), dmg * 0.85);
+    vis.mat.emissiveIntensity =
+      (bot.overheated ? 2.5 : 0.6 + m.hp_pct * 1.4) * lowHpFlicker;
+
+    if (vis.spinner) {
+      vis.spinner.rotation.y = m.kind === ModuleKind.Core ? t * 1.8 : t * 4 + i;
+    }
+    if (vis.pulseMesh) {
+      const s = 0.92 + Math.sin(t * 7 + i) * 0.1;
+      vis.pulseMesh.scale.set(s, 1, s);
+    }
   });
 }
 
@@ -130,4 +159,5 @@ export function removeBotVisual(scene: THREE.Scene, entry: BotVisual) {
   scene.remove(entry.group);
   entry.mat.dispose();
   entry.accentMat.dispose();
+  entry.modules.forEach((m) => m.mat.dispose());
 }
