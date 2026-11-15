@@ -1,112 +1,36 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import ArenaScene, { ArenaSnapshot } from "./scene";
 
-interface BotView {
-  id: number;
-  name: string;
-  color: string;
-  x: number;
-  y: number;
-  angle: number;
-  hp: number;
-  kills: number;
-  cpu_pct: number;
-  overheated: boolean;
-  scans: [number, number][];
-}
-
-interface BulletView {
-  x: number;
-  y: number;
-}
-
-interface OrbView {
-  x: number;
-  y: number;
-  kind: string;
-}
-
-interface ArenaSnapshot {
-  tick: number;
-  bots: BotView[];
-  bullets: BulletView[];
-  orbs: OrbView[];
-  events: string[];
+function getApiBase() {
+  return (
+    process.env.NEXT_PUBLIC_API_URL ?? `http://${window.location.hostname}:8000`
+  );
 }
 
 export default function ArenaPage() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [name, setName] = useState("Bot");
-  const [stats, setStats] = useState<BotView[]>([]);
+  const [snapshot, setSnapshot] = useState<ArenaSnapshot | null>(null);
+  const [followId, setFollowId] = useState<number | null>(null);
+  const [name, setName] = useState("MyBot");
   const [events, setEvents] = useState<string[]>([]);
+  const [wsStatus, setWsStatus] = useState("connecting...");
+  const [err, setErr] = useState("");
 
   useEffect(() => {
-    const host = window.location.hostname;
-    const ws = new WebSocket(`ws://${host}:8000/ws`);
+    const wsUrl =
+      process.env.NEXT_PUBLIC_WS_URL ??
+      `ws://${window.location.hostname}:8000/ws`;
+
+    const ws = new WebSocket(wsUrl);
+    ws.onopen = () => setWsStatus("connected");
+    ws.onerror = () => setWsStatus("error");
+    ws.onclose = () => setWsStatus("closed");
 
     ws.onmessage = (ev) => {
       const data: ArenaSnapshot = JSON.parse(ev.data);
-      setStats(data.bots);
+      setSnapshot(data);
       if (data.events?.length) {
-        setEvents((prev) => [...data.events, ...prev].slice(0, 10));
-      }
-
-      const canvas = canvasRef.current;
-      const ctx = canvas?.getContext("2d");
-      if (!canvas || !ctx) return;
-
-      ctx.fillStyle = "#09090b";
-      ctx.fillRect(0, 0, 1000, 1000);
-
-      for (const orb of data.orbs) {
-        ctx.fillStyle = orb.kind === "overclock" ? "#facc15" : "#4ade80";
-        ctx.beginPath();
-        ctx.arc(orb.x, orb.y, 10, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      ctx.fillStyle = "#f43f5e";
-      for (const b of data.bullets) {
-        ctx.beginPath();
-        ctx.arc(b.x, b.y, 4, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      for (const bot of data.bots) {
-        const rad = (bot.angle * Math.PI) / 180;
-
-        for (const [offset, fov] of bot.scans) {
-          const start = ((bot.angle + offset - fov / 2) * Math.PI) / 180;
-          const end = ((bot.angle + offset + fov / 2) * Math.PI) / 180;
-
-          ctx.fillStyle = "rgba(56, 189, 248, 0.12)";
-          ctx.beginPath();
-          ctx.moveTo(bot.x, bot.y);
-          ctx.arc(bot.x, bot.y, 350, start, end);
-          ctx.closePath();
-          ctx.fill();
-        }
-
-        ctx.save();
-        ctx.translate(bot.x, bot.y);
-        ctx.rotate(rad);
-        ctx.fillStyle = bot.overheated ? "#ef4444" : bot.color;
-        ctx.beginPath();
-        ctx.moveTo(18, 0);
-        ctx.lineTo(-12, -12);
-        ctx.lineTo(-8, 0);
-        ctx.lineTo(-12, 12);
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
-
-        ctx.fillStyle = "#e4e4e7";
-        ctx.font = "12px monospace";
-        ctx.fillText(
-          `${bot.name} | HP:${Math.round(bot.hp)} | CPU:${Math.round(bot.cpu_pct)}%`,
-          bot.x - 40,
-          bot.y - 24,
-        );
+        setEvents((prev) => [...data.events, ...prev].slice(0, 12));
       }
     };
 
@@ -114,68 +38,117 @@ export default function ArenaPage() {
   }, []);
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const apiBase = `http://${window.location.hostname}:8000`;
     const file = e.target.files?.[0];
     if (!file) return;
-    const buf = await file.arrayBuffer();
-    await fetch(`${apiBase}/api/bots?name=${encodeURIComponent(name)}`, {
-      method: "POST",
-      body: buf,
-    });
+    try {
+      setErr("");
+      const buf = await file.arrayBuffer();
+      const res = await fetch(
+        `${getApiBase()}/api/bots?name=${encodeURIComponent(name)}`,
+        { method: "POST", body: buf },
+      );
+      if (!res.ok) setErr(`${res.status}: ${await res.text()}`);
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      e.target.value = "";
+    }
   }
 
   async function spawnPreset(kind: "hunter" | "sniper") {
-    await fetch(`http://${window.location.hostname}:8000/api/presets/${kind}`, {
-      method: "POST",
-    });
+    try {
+      setErr("");
+      const res = await fetch(`${getApiBase()}/api/presets/${kind}`, {
+        method: "POST",
+      });
+      if (!res.ok) setErr(`${res.status}: ${await res.text()}`);
+    } catch (e) {
+      setErr(String(e));
+    }
   }
 
   async function resetArena() {
-    await fetch(`http://${window.location.hostname}:8000/api/reset`, {
-      method: "POST",
-    });
+    try {
+      setErr("");
+      const res = await fetch(`${getApiBase()}/api/reset`, { method: "POST" });
+      if (!res.ok) setErr(`${res.status}: ${await res.text()}`);
+      setEvents([]);
+      setFollowId(null);
+    } catch (e) {
+      setErr(String(e));
+    }
   }
 
   return (
-    <main className="min-h-screen big-zinc-950 text-zinc-100 p-6 flex gap-6">
-      <canvas
-        ref={canvasRef}
-        width={1000}
-        height={1000}
-        className="w-175 border border-zin-800 rounded-lg bg-black"
-      />
-      <div className="flex-1 flex flex-col gap-4">
-        <h1 className="text-2x1 font-bold font-mono">WASM ARENA</h1>
-        <div className="flex gap-2">
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="bg-zinc-900 border border-zinc-700 px-3 py-1 rounder"
-            placeholder="Bot name"
-          />
-          <input type="file" accept=".wasm" onChange={handleUpload} />
+    <main className="min-h-screen bg-zinc-950 text-zinc-100 p-6 flex flex-col lg:flex-row gap-6">
+      {/* 3D Area */}
+      <div className="flex-1 h-[650px] lg:h-[calc(100vh-3rem)]">
+        <ArenaScene snapshot={snapshot} followBotId={followId} />
+      </div>
+
+      {/* Sidebar */}
+      <aside className="w-full lg:w-96 shrink-0 flex flex-col gap-4 font-mono">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2x1 font-bold tracking-tight">WASM ARENA</h1>
+          <span
+            className={`text-xs px-2 py-0.5 rounded ${
+              wsStatus === "connected"
+                ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                : "bg-red-950 text-red-400 border border-red-800"
+            }`}
+          >
+            WS: {wsStatus}
+          </span>
+        </div>
+
+        {err && (
+          <div className="text-xs bg-red-950/70 border border-red-800 text-red-300 p-2 rounded">
+            {err}
+          </div>
+        )}
+
+        {/* Load .wasm */}
+        <div className="bg-zinc-900/70 border border-zinc-800 p-3 rounded-lg flex flex-col gap-2">
+          <div className="flex gap-2">
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="flex-1 bg-zinc-950 border border-zinc-700 px-3 py-1.5 rounded text-sm"
+              placeholder="Bot name"
+            />
+            <label className="bg-zinc-800 hover:bg-zinc-700 cursor-pointer px-3 py-1.5 rounded text-sm flex items-center">
+              Upload .wasm
+              <input
+                type="file"
+                accept=".wasm"
+                onChange={handleUpload}
+                className="hidden"
+              />
+            </label>
+          </div>
+
           <div className="flex gap-2">
             <button
               onClick={() => spawnPreset("hunter")}
-              className="bg-sky-600 px-3 py-1 rounded"
+              className="flex-1 bg-sky-600 hover:bg-sky-500 px-3 py-1.5 rounded text-sm font-semibold cursor-pointer"
             >
               + Hunter
             </button>
             <button
               onClick={() => spawnPreset("sniper")}
-              className="bg-purple-600 px-3 py-1 rounded"
+              className="flex-1 bg-purple-600 hover:bg-purple-500 px-3 py-1.5 rounded text-sm font-semibold cursor-pointer"
             >
               + Sniper
             </button>
             <button
               onClick={resetArena}
-              className="bg-red-700 px-3 py-1 rounded"
+              className="bg-red-700 hover:bg-red-600 px-3 py-1.5 rounded text-sm font-semibold cursor-pointer"
             >
               Reset
             </button>
           </div>
         </div>
-      </div>
+      </aside>
     </main>
   );
 }
