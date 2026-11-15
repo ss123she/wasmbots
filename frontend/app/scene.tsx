@@ -1,14 +1,14 @@
 "use client";
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
-import { ArenaSnapshot, BulletView, OrbView } from "./types";
-import { MeshPool, createArenaRenderer, setPos } from "./renderer";
+import { ArenaSnapshot, BulletView, OrbView } from "./lib/types";
+import { MeshPool, createArenaRenderer, setPos } from "./scene/renderer";
 import {
   BotVisual,
   createBotVisual,
   removeBotVisual,
   updateBotVisual,
-} from "./bot-mesh";
+} from "./scene/bot-mesh";
 
 interface ArenaSceneProps {
   snapshot: ArenaSnapshot | null;

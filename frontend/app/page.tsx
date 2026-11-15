@@ -1,76 +1,20 @@
 "use client";
-import { useEffect, useState } from "react";
-import ArenaScene from "./scene";
-import { ArenaSnapshot } from "./types";
-import { api, getWsUrl } from "./api";
+import { useState } from "react";
+import { api } from "./lib/api";
+import { useArena } from "./lib/use-arena";
+import ArenaScene from "./scene/ArenaScene";
 
 export default function ArenaPage() {
-  const [snapshot, setSnapshot] = useState<ArenaSnapshot | null>(null);
+  const { snapshot, wsStatus, err, run, clearEvents } = useArena();
   const [followId, setFollowId] = useState<number | null>(null);
   const [name, setName] = useState("MyBot");
-  const [, setEvents] = useState<string[]>([]);
-  const [wsStatus, setWsStatus] = useState("connecting...");
-  const [err, setErr] = useState("");
-
-  useEffect(() => {
-    let disposed = false;
-    let ws: WebSocket | null = null;
-    let timer: ReturnType<typeof setTimeout>;
-
-    const connect = () => {
-      if (disposed) return;
-      setWsStatus("connecting...");
-      const sock = new WebSocket(getWsUrl());
-      ws = sock;
-
-      sock.onopen = () => {
-        if (disposed) {
-          sock.close();
-          return;
-        }
-        setWsStatus("connected");
-      };
-      sock.onerror = () => !disposed && setWsStatus("error");
-      sock.onclose = () => {
-        if (disposed) return;
-        setWsStatus("closed");
-        timer = setTimeout(connect, 1500);
-      };
-      sock.onmessage = (ev) => {
-        if (disposed) return;
-        const data: ArenaSnapshot = JSON.parse(ev.data);
-        setSnapshot(data);
-        if (data.events?.length) {
-          setEvents((prev) => [...data.events, ...prev].slice(0, 12));
-        }
-      };
-    };
-
-    connect();
-
-    return () => {
-      disposed = true;
-      clearTimeout(timer);
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.close();
-      }
-    };
-  }, []);
-
-  async function run(action: () => Promise<void>) {
-    try {
-      setErr("");
-      await action();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    }
-  }
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
-    if (file)
+    if (file) {
       await run(async () => api.uploadBot(name, await file.arrayBuffer()));
+    }
   }
 
   return (
@@ -135,7 +79,7 @@ export default function ArenaPage() {
               onClick={() =>
                 run(async () => {
                   await api.reset();
-                  setEvents([]);
+                  clearEvents();
                   setFollowId(null);
                 })
               }

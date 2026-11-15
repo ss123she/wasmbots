@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { BotView, ModuleKind, ModuleView } from "./types";
+import { BotView, ModuleKind, ModuleView } from "../lib/types";
 import { degToRad, lerpAngle, setPos, toPos } from "./renderer";
 
 const CELL_SIZE = 10;
@@ -8,7 +8,6 @@ const GEOS = {
   core: new THREE.OctahedronGeometry(5.2, 0),
   armor: new THREE.BoxGeometry(9.2, 7.5, 9.2),
   thruster: new THREE.CylinderGeometry(2.6, 4.0, 7, 8).rotateZ(Math.PI / 2),
-  exhaust: new THREE.ConeGeometry(2.3, 7, 6).rotateZ(-Math.PI / 2),
   cannonBase: new THREE.BoxGeometry(6.5, 5, 6.5),
   cannonBarrel: new THREE.CylinderGeometry(1.1, 1.3, 9, 8).rotateZ(
     -Math.PI / 2,
@@ -18,15 +17,9 @@ const GEOS = {
   reactor: new THREE.CylinderGeometry(3.5, 3.5, 8.5, 10),
 };
 
-const exhaustMat = new THREE.MeshBasicMaterial({
-  color: new THREE.Color(0x38bdf8).multiplyScalar(2.2),
-  toneMapped: false,
-});
-
 interface ModuleVisual {
   root: THREE.Group;
   spinner?: THREE.Object3D;
-  exhaust?: THREE.Object3D;
 }
 
 export interface BotVisual {
@@ -58,17 +51,19 @@ function buildModule(
       root.add(new THREE.Mesh(GEOS.thruster, accentMat));
       return { root };
 
-    case ModuleKind.Cannon:
+    case ModuleKind.Cannon: {
       const barrel = new THREE.Mesh(GEOS.cannonBarrel, accentMat);
       barrel.position.set(5, 1.5, 0);
       root.add(new THREE.Mesh(GEOS.cannonBase, mainMat), barrel);
       return { root };
+    }
 
-    case ModuleKind.Radar:
+    case ModuleKind.Radar: {
       const dish = new THREE.Mesh(GEOS.radarDish, accentMat);
       dish.position.y = 4.5;
       root.add(new THREE.Mesh(GEOS.radarMast, mainMat), dish);
       return { root, spinner: dish };
+    }
 
     case ModuleKind.Reactor:
       root.add(new THREE.Mesh(GEOS.reactor, accentMat));
@@ -128,8 +123,6 @@ export function updateBotVisual(entry: BotVisual, bot: BotView, t: number) {
     if (!vis) return;
     vis.root.visible = m.hp_pct > 0;
     if (vis.spinner) vis.spinner.rotation.y = t * 4 + i;
-    if (vis.exhaust)
-      vis.exhaust.scale.set(0.75 + Math.sin(t * 24 + i) * 0.35, 1, 1);
   });
 }
 
