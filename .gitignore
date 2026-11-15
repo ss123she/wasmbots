@@ -1,5 +1,6 @@
 backend/target/
-
+bots/sniper/target/
+bots/hunter/target/
 
 frontend/node_modules
 frontend/.pnp

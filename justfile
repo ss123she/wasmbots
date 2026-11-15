@@ -1,22 +1,25 @@
 default: run
 
-# Run both frontend and backend concurrently (requires just >= 1.29.0)
-[parallel]
-run: dev-back dev-front
+run: build-bots dev
 
-[working-directory: 'backend']
+[parallel]
+build-bots: _build-hunter _build-sniper
+
+_build-hunter:
+    cargo build --manifest-path bots/hunter/Cargo.toml --target wasm32-unknown-unknown --release
+    cp bots/hunter/target/wasm32-unknown-unknown/release/hunter.wasm backend/presets/
+
+_build-sniper:
+    cargo build --manifest-path bots/sniper/Cargo.toml --target wasm32-unknown-unknown --release
+    cp bots/sniper/target/wasm32-unknown-unknown/release/sniper.wasm backend/presets/
+
+dev:
+    bunx concurrently -n BACK,FRONT -c cyan,magenta --kill-others "just dev-back" "just dev-front"
+
+[working-directory('backend')]
 dev-back:
     cargo run
 
-[working-directory: 'frontend']
+[working-directory('frontend')]
 dev-front:
-    npm run dev
-
-build:
-    cargo build --release --manifest-path backend/Cargo.toml
-    npm --prefix frontend run build
-
-# Run tests and linters
-test:
-    cargo test --manifest-path backend/Cargo.toml
-    npm --prefix frontend run lint
+    bun run dev
