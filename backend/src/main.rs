@@ -1,5 +1,5 @@
 use std::{
-    net::SocketAddr,
+    net::{Ipv6Addr, SocketAddr},
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -13,6 +13,7 @@ mod wasm;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    eprintln!("Booting arena...");
     let (tx, _) = broadcast::channel::<String>(32);
     let world = Arc::new(Mutex::new(World::new()?));
 
@@ -35,10 +36,28 @@ async fn main() -> anyhow::Result<()> {
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(8000);
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    println!("Arena running on http://{addr}");
 
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    let v6 = SocketAddr::from((Ipv6Addr::UNSPECIFIED, port));
+    let v4 = SocketAddr::from(([0, 0, 0, 0], port));
+
+    let l6 = tokio::net::TcpListener::bind(v6).await.ok();
+    let l4 = tokio::net::TcpListener::bind(v4).await.ok();
+
+    match (l6, l4) {
+        (Some(l6), Some(l4)) => {
+            eprintln!("Arena running on http://{v4} and http://{v6}");
+            tokio::try_join!(axum::serve(l6, app.clone()), axum::serve(l4, app))?;
+        }
+        (Some(l6), None) => {
+            eprintln!("Arena running on http://{v6} (dual-stack)");
+            axum::serve(l6, app).await?;
+        }
+        (None, Some(l4)) => {
+            eprintln!("Arena running on http://{v4}");
+            axum::serve(l4, app).await?;
+        }
+        (None, None) => anyhow::bail!("Failed to bind port {port}"),
+    }
+
     Ok(())
 }
