@@ -1,0 +1,29 @@
+backend/target/
+
+
+frontend/node_modules
+frontend/.pnp
+frontend/.pnp.*
+frontend/.yarn/*
+frontend/!.yarn/patches
+frontend/!.yarn/plugins
+frontend/!.yarn/releases
+frontend/!.yarn/versions
+frontend/# testing
+frontend/coverage
+frontend/# next.js
+frontend/.next/
+frontend/out/
+frontend/# production
+frontend/build
+frontend/# misc
+frontend/.DS_Store
+frontend/*.pem
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.pnpm-debug.log*
+frontend/.env*
+frontend/.vercel
+frontend/*.tsbuildinfo
+frontend/next-env.d.ts
