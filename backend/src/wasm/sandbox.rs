@@ -3,7 +3,9 @@ use wasmtime::{
     Config, Engine, Instance, Linker, Module, Store, StoreLimits, StoreLimitsBuilder, TypedFunc,
 };
 
-use crate::modules::{ModuleSnapshot, ModuleSpec, STARTING_CREDITS, core_spec, default_blueprint};
+use crate::arena::modules::{
+    ModuleSnapshot, ModuleSpec, STARTING_CREDITS, core_spec, default_blueprint,
+};
 
 pub const BASE_FUEL_PER_TICK: u64 = 15_000;
 

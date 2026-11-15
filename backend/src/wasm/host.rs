@@ -1,10 +1,10 @@
 use anyhow::Result;
 use wasmtime::{Caller, Engine, Linker};
 
-use crate::{
+use super::sandbox::BotState;
+use crate::arena::{
     geom,
     modules::{CELL_SIZE, ModuleKind, try_place},
-    sandbox::BotState,
 };
 
 pub fn create_linker(engine: &Engine) -> Result<Linker<BotState>> {

@@ -1,4 +1,4 @@
-use crate::geom;
+use super::geom;
 
 pub const GRID_RADIUS: i32 = 2;
 pub const CELL_SIZE: f32 = 10.0;

@@ -1,12 +1,14 @@
-use wasmtime::{Engine, Linker};
-
-use crate::{
+use super::{
     geom,
-    host::create_linker,
     modules::{CELL_SIZE, ModuleKind, ModuleSnapshot, ModuleSpec, ModuleState, compute_mobility},
-    sandbox::{BASE_FUEL_PER_TICK, BotInput, BotRuntime, BotState, create_engine},
     snapshot::{ArenaSnapshot, BotView, BulletView, ModuleView, OrbView},
 };
+
+use crate::wasm::{
+    host::create_linker,
+    sandbox::{BASE_FUEL_PER_TICK, BotInput, BotRuntime, BotState, create_engine},
+};
+use wasmtime::{Engine, Linker};
 
 pub const ARENA_SIZE: f32 = 1000.0;
 
