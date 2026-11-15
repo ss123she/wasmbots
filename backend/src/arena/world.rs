@@ -1,15 +1,13 @@
 use wasmtime::{Engine, Linker};
 
-use crate::{
-    arena::{
-        components::{Bot, Hull, Pos},
-        snapshot::ArenaSnapshot,
-        systems,
-    },
-    wasm::{
-        host::create_linker,
-        sandbox::{BotRuntime, BotState, create_engine},
-    },
+use super::{
+    components::{Bot, Hull, Pos},
+    snapshot::ArenaSnapshot,
+    systems,
+};
+use crate::wasm::{
+    host::create_linker,
+    sandbox::{BotRuntime, BotState, create_engine},
 };
 
 pub struct World {
@@ -43,7 +41,7 @@ impl World {
         self.next_color += 1;
 
         self.ecs.spawn((
-            Pos(systems::random_pos(100.0, 900.0)),
+            Pos(systems::random_spawn()),
             Bot {
                 name: name.to_string(),
                 color,
@@ -55,21 +53,11 @@ impl World {
             },
             Hull(modules),
         ));
-
         Ok(())
     }
 
     pub fn step(&mut self) -> ArenaSnapshot {
         self.tick += 1;
-        let mut events = Vec::new();
-
-        systems::spawn_orbs(&mut self.ecs, self.tick);
-        systems::step_bots(&mut self.ecs);
-        systems::separate_bots(&mut self.ecs);
-        systems::step_bullets(&mut self.ecs, &mut events);
-        systems::step_orbs(&mut self.ecs, &mut events);
-        systems::respawn_dead(&mut self.ecs);
-
-        systems::build_snapshot(&self.ecs, self.tick, events)
+        systems::tick(&mut self.ecs, self.tick)
     }
 }

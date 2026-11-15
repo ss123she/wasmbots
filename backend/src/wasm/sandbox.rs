@@ -5,9 +5,10 @@ use wasmtime::{
     TypedFunc,
 };
 
-use crate::arena::modules::{Module, ModuleKind, STARTING_CREDITS, default_blueprint};
-
-pub const BASE_FUEL_PER_TICK: u64 = 15_000;
+use crate::arena::{
+    config::{BASE_FUEL_PER_TICK, STARTING_CREDITS},
+    modules::{Module, ModuleKind, default_blueprint},
+};
 
 pub struct BotInput {
     pub hp: f32,

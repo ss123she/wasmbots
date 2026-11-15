@@ -1,9 +1,10 @@
 use glam::Vec2;
 use hecs::Entity;
 
-use crate::{arena::modules::Module, wasm::sandbox::BotRuntime};
-
-const HULL_DEATH_RATIO: f32 = 0.45;
+use crate::{
+    arena::{config::HULL_DEATH_RATIO, modules::Module},
+    wasm::sandbox::BotRuntime,
+};
 
 pub struct Pos(pub Vec2);
 pub struct Vel(pub Vec2);

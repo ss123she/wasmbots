@@ -4,6 +4,7 @@ use wasmtime::{Caller, Engine, Linker};
 
 use crate::{
     arena::{
+        config::{CORE_SCAN_RANGE, RADAR_RANGE},
         geom,
         modules::{Module, ModuleKind, has_radar, try_place},
     },
@@ -148,9 +149,9 @@ pub fn create_linker(engine: &Engine) -> Result<Linker<BotState>> {
                 return -1.0;
             }
             let max_range = if m.kind == ModuleKind::Radar {
-                1500.0
+                CORE_SCAN_RANGE
             } else {
-                250.0
+                RADAR_RANGE
             };
             let origin = m.world_pos(state.input.pos, state.input.angle);
             scan_cone(state, origin, m.dir + offset_deg, fov_deg, max_range)
@@ -163,9 +164,9 @@ pub fn create_linker(engine: &Engine) -> Result<Linker<BotState>> {
         |mut caller: Caller<'_, BotState>, offset_deg: f32, fov_deg: f32| -> f32 {
             let state = caller.data_mut();
             let max_range = if has_radar(&state.input.modules) {
-                1500.0
+                CORE_SCAN_RANGE
             } else {
-                250.0
+                RADAR_RANGE
             };
             let origin = state.input.pos;
             scan_cone(state, origin, offset_deg, fov_deg, max_range)

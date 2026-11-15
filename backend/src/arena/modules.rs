@@ -1,10 +1,8 @@
 use glam::Vec2;
 
-use super::{geom, snapshot::ModuleView};
+use crate::arena::config::{CELL_SIZE, GRID_RADIUS};
 
-pub const GRID_RADIUS: i32 = 2;
-pub const CELL_SIZE: f32 = 10.0;
-pub const STARTING_CREDITS: i32 = 120;
+use super::{geom, snapshot::ModuleView};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
