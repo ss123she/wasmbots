@@ -1,15 +1,19 @@
 use serde::Serialize;
+use ts_rs::TS;
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[ts(export)]
 pub struct ModuleView {
     pub gx: i32,
     pub gy: i32,
+    #[ts(type = "0 | 1 | 2 | 3 | 4 | 5")]
     pub kind: u8,
     pub dir: f32,
     pub hp_pct: f32,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[ts(export)]
 pub struct BotView {
     pub id: usize,
     pub name: String,
@@ -25,20 +29,24 @@ pub struct BotView {
     pub modules: Vec<ModuleView>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[ts(export)]
 pub struct BulletView {
     pub x: f32,
     pub y: f32,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[ts(export)]
 pub struct OrbView {
     pub x: f32,
     pub y: f32,
+    #[ts(type = "\"heal\" | \"overclock\"")]
     pub kind: &'static str,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[ts(export)]
 pub struct ArenaSnapshot {
     pub tick: u64,
     pub bots: Vec<BotView>,

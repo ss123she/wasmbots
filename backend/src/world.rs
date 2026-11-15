@@ -1,4 +1,3 @@
-use serde::Serialize;
 use wasmtime::{Engine, Linker};
 
 use crate::{

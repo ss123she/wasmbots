@@ -83,7 +83,7 @@ export default function ArenaPage() {
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100 p-6 flex flex-col lg:flex-row gap-6">
       {/* 3D Area */}
-      <div className="flex-1 h-[650px] lg:h-[calc(100vh-3rem)]">
+      <div className="flex-1 h-162.5 lg:h-[calc(100vh-3rem)]">
         <ArenaScene snapshot={snapshot} followBotId={followId} />
       </div>
 
