@@ -101,3 +101,72 @@ pub fn default_blueprint() -> Vec<ModuleSpec> {
     })
     .collect()
 }
+
+pub fn try_place(
+    blueprint: &mut Vec<ModuleSpec>,
+    credits: &mut i32,
+    gx: i32,
+    gy: i32,
+    kind_i: i32,
+    dir: f32,
+) -> i32 {
+    if gx.abs() > GRID_RADIUS || gy.abs() > GRID_RADIUS {
+        return -2;
+    }
+    let Some(kind) = ModuleKind::from_i32(kind_i) else {
+        return -3;
+    };
+    if kind == ModuleKind::Core {
+        return -3;
+    }
+    if blueprint.iter().any(|m| m.gx == gx && m.gy == gy) {
+        return -4;
+    }
+    let connected = blueprint
+        .iter()
+        .any(|m| (m.gx - gx).abs() + (m.gy - gy).abs() == 1);
+    if !connected {
+        return -5;
+    }
+
+    let (cost, max_hp, mass) = kind.stats();
+    if *credits < cost {
+        return -6;
+    }
+
+    *credits -= cost;
+    let id = blueprint.len() as i32;
+    blueprint.push(ModuleSpec {
+        gx,
+        gy,
+        kind,
+        dir: geom::normalize_deg(dir),
+        max_hp,
+        mass,
+    });
+    id
+}
+
+pub fn compute_mobility(blueprint: &[ModuleSpec], states: &[ModuleState]) -> (f32, f32) {
+    let mut total_mass = 0.0_f32;
+    let mut thrust = 0.5_f32;
+    let mut turn_power = 0.7_f32;
+
+    for (spec, st) in blueprint.iter().zip(states) {
+        if st.hp <= 0.0 {
+            continue;
+        }
+        total_mass += spec.mass;
+        if spec.kind == ModuleKind::Thruster {
+            thrust += 1.4;
+            let lever = ((spec.gx.pow(2) + spec.gy.pow(2)) as f32).sqrt().max(1.0);
+            turn_power += 0.45 * lever;
+        }
+    }
+
+    let mass_factor = (total_mass / 6.0).sqrt().max(0.75);
+    (
+        (thrust / mass_factor).clamp(0.35, 2.0),
+        (turn_power / mass_factor).clamp(0.45, 2.0),
+    )
+}
