@@ -1,11 +1,51 @@
 use anyhow::Result;
 use wasmtime::{Caller, Engine, Linker};
 
-use super::sandbox::BotState;
-use crate::arena::{
-    geom,
-    modules::{CELL_SIZE, ModuleKind, try_place},
+use crate::{
+    arena::{
+        geom,
+        modules::{Module, ModuleKind, has_radar, try_place},
+    },
+    wasm::sandbox::BotState,
 };
+
+fn try_fire(state: &mut BotState, idx: usize) -> i32 {
+    let ready = state
+        .input
+        .modules
+        .get(idx)
+        .is_some_and(Module::is_ready_cannon)
+        && !state.output.fired_modules.contains(&idx);
+    if ready {
+        state.output.fired_modules.push(idx);
+        1
+    } else {
+        0
+    }
+}
+
+fn scan_cone(
+    state: &mut BotState,
+    ox: f32,
+    oy: f32,
+    offset_deg: f32,
+    fov_deg: f32,
+    max_range: f32,
+) -> f32 {
+    let nearest = state
+        .input
+        .enemies
+        .iter()
+        .filter_map(|&(tx, ty)| {
+            geom::in_cone(ox, oy, state.input.angle, offset_deg, fov_deg, tx, ty)
+        })
+        .filter(|&d| d <= max_range)
+        .reduce(f32::min)
+        .unwrap_or(-1.0);
+
+    state.output.scans.push((offset_deg, fov_deg));
+    nearest
+}
 
 pub fn create_linker(engine: &Engine) -> Result<Linker<BotState>> {
     let mut linker = Linker::new(engine);
@@ -56,14 +96,9 @@ pub fn create_linker(engine: &Engine) -> Result<Linker<BotState>> {
         "env",
         "module_hp",
         |caller: Caller<'_, BotState>, id: i32| -> f32 {
-            if id < 0 {
-                return -1.0;
-            }
-            caller
-                .data()
-                .input
-                .modules
-                .get(id as usize)
+            usize::try_from(id)
+                .ok()
+                .and_then(|i| caller.data().input.modules.get(i))
                 .map(|m| m.hp.max(0.0))
                 .unwrap_or(-1.0)
         },
@@ -83,40 +118,17 @@ pub fn create_linker(engine: &Engine) -> Result<Linker<BotState>> {
         "env",
         "fire_module",
         |mut caller: Caller<'_, BotState>, id: i32| -> i32 {
-            if id < 0 {
-                return 0;
-            }
-            let idx = id as usize;
-            let state = caller.data_mut();
-            let ready = state.input.modules.get(idx).is_some_and(|m| {
-                m.kind == ModuleKind::Cannon
-                    && m.hp > 0.0
-                    && m.cooldown <= 0.0
-                    && !state.output.fired_modules.contains(&idx)
-            });
-            if ready {
-                state.output.fired_modules.push(idx);
-                1
-            } else {
-                0
-            }
+            usize::try_from(id).map_or(0, |idx| try_fire(caller.data_mut(), idx))
         },
     )?;
 
     linker.func_wrap("env", "fire", |mut caller: Caller<'_, BotState>| -> i32 {
         let state = caller.data_mut();
-        let ready = state.input.modules.iter().enumerate().position(|(idx, m)| {
-            m.kind == ModuleKind::Cannon
-                && m.hp > 0.0
-                && m.cooldown <= 0.0
-                && !state.output.fired_modules.contains(&idx)
-        });
-        if let Some(idx) = ready {
-            state.output.fired_modules.push(idx);
-            1
-        } else {
-            0
-        }
+        let ready =
+            state.input.modules.iter().enumerate().position(|(idx, m)| {
+                m.is_ready_cannon() && !state.output.fired_modules.contains(&idx)
+            });
+        ready.map_or(0, |idx| try_fire(state, idx))
     })?;
 
     linker.func_wrap("env", "scan_orb", |caller: Caller<'_, BotState>| -> f32 {
@@ -127,44 +139,23 @@ pub fn create_linker(engine: &Engine) -> Result<Linker<BotState>> {
         "env",
         "scan_from",
         |mut caller: Caller<'_, BotState>, id: i32, offset_deg: f32, fov_deg: f32| -> f32 {
-            if id < 0 {
-                return -1.0;
-            }
             let state = caller.data_mut();
-            let inp = &state.input;
-            let Some(m) = inp.modules.get(id as usize) else {
+            let Some(&m) = usize::try_from(id)
+                .ok()
+                .and_then(|i| state.input.modules.get(i))
+            else {
                 return -1.0;
             };
-            if m.hp <= 0.0 || !matches!(m.kind, ModuleKind::Core | ModuleKind::Radar) {
+            if !m.is_alive() || !matches!(m.kind, ModuleKind::Core | ModuleKind::Radar) {
                 return -1.0;
             }
-
             let max_range = if m.kind == ModuleKind::Radar {
                 1500.0
             } else {
                 250.0
             };
-            let (mx, my) = geom::local_to_world(
-                inp.x,
-                inp.y,
-                inp.angle,
-                m.gx as f32 * CELL_SIZE,
-                m.gy as f32 * CELL_SIZE,
-            );
-            let scan_offset = m.dir + offset_deg;
-
-            let nearest = inp
-                .enemies
-                .iter()
-                .filter_map(|&(tx, ty)| {
-                    geom::in_cone(mx, my, inp.angle, scan_offset, fov_deg, tx, ty)
-                })
-                .filter(|&d| d <= max_range)
-                .reduce(f32::min)
-                .unwrap_or(-1.0);
-
-            state.output.scans.push((scan_offset, fov_deg));
-            nearest
+            let (mx, my) = m.world_pos(state.input.x, state.input.y, state.input.angle);
+            scan_cone(state, mx, my, m.dir + offset_deg, fov_deg, max_range)
         },
     )?;
 
@@ -173,25 +164,13 @@ pub fn create_linker(engine: &Engine) -> Result<Linker<BotState>> {
         "scan_enemy",
         |mut caller: Caller<'_, BotState>, offset_deg: f32, fov_deg: f32| -> f32 {
             let state = caller.data_mut();
-            let inp = &state.input;
-            let has_radar = inp
-                .modules
-                .iter()
-                .any(|m| m.kind == ModuleKind::Radar && m.hp > 0.0);
-            let max_range = if has_radar { 1500.0 } else { 250.0 };
-
-            let nearest = inp
-                .enemies
-                .iter()
-                .filter_map(|&(tx, ty)| {
-                    geom::in_cone(inp.x, inp.y, inp.angle, offset_deg, fov_deg, tx, ty)
-                })
-                .filter(|&d| d <= max_range)
-                .reduce(f32::min)
-                .unwrap_or(-1.0);
-
-            state.output.scans.push((offset_deg, fov_deg));
-            nearest
+            let max_range = if has_radar(&state.input.modules) {
+                1500.0
+            } else {
+                250.0
+            };
+            let (x, y) = (state.input.x, state.input.y);
+            scan_cone(state, x, y, offset_deg, fov_deg, max_range)
         },
     )?;
 

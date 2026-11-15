@@ -1,4 +1,4 @@
-use super::geom;
+use super::{geom, snapshot::ModuleView};
 
 pub const GRID_RADIUS: i32 = 2;
 pub const CELL_SIZE: f32 = 10.0;
@@ -42,68 +42,68 @@ impl ModuleKind {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct ModuleSpec {
+pub struct Module {
     pub gx: i32,
     pub gy: i32,
     pub kind: ModuleKind,
     pub dir: f32,
+    pub hp: f32,
     pub max_hp: f32,
     pub mass: f32,
-}
-
-pub struct ModuleState {
-    pub hp: f32,
     pub cooldown: f32,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct ModuleSnapshot {
-    pub gx: i32,
-    pub gy: i32,
-    pub kind: ModuleKind,
-    pub dir: f32,
-    pub hp: f32,
-    pub cooldown: f32,
-}
-
-pub fn core_spec() -> ModuleSpec {
-    let (_, max_hp, mass) = ModuleKind::Core.stats();
-    ModuleSpec {
-        gx: 0,
-        gy: 0,
-        kind: ModuleKind::Core,
-        dir: 0.0,
-        max_hp,
-        mass,
-    }
-}
-
-pub fn default_blueprint() -> Vec<ModuleSpec> {
-    [
-        (0, 0, ModuleKind::Core, 0.0),
-        (-1, 0, ModuleKind::Thruster, 180.0),
-        (1, 0, ModuleKind::Cannon, 0.0),
-        (0, 1, ModuleKind::Armor, 0.0),
-        (0, -1, ModuleKind::Armor, 0.0),
-        (-1, 1, ModuleKind::Radar, 0.0),
-    ]
-    .into_iter()
-    .map(|(gx, gy, kind, dir)| {
+impl Module {
+    pub fn new(gx: i32, gy: i32, kind: ModuleKind, dir: f32) -> Self {
         let (_, max_hp, mass) = kind.stats();
-        ModuleSpec {
+        Self {
             gx,
             gy,
             kind,
-            dir,
+            dir: geom::normalize_deg(dir),
+            hp: max_hp,
             max_hp,
             mass,
+            cooldown: 0.0,
         }
-    })
-    .collect()
+    }
+
+    pub fn is_alive(&self) -> bool {
+        self.hp > 0.0
+    }
+
+    pub fn is_ready_cannon(&self) -> bool {
+        self.kind == ModuleKind::Cannon && self.is_alive() && self.cooldown <= 0.0
+    }
+
+    pub fn world_pos(&self, bx: f32, by: f32, angle: f32) -> (f32, f32) {
+        geom::local_to_world(
+            bx,
+            by,
+            angle,
+            self.gx as f32 * CELL_SIZE,
+            self.gy as f32 * CELL_SIZE,
+        )
+    }
+
+    pub fn reset(&mut self) {
+        self.hp = self.max_hp;
+        self.cooldown = 0.0;
+    }
+
+    pub fn to_view(&self) -> ModuleView {
+        ModuleView {
+            gx: self.gx,
+            gy: self.gy,
+            kind: self.kind as u8,
+            dir: self.dir,
+            hp_pct: (self.hp / self.max_hp).clamp(0.0, 1.0),
+        }
+    }
 }
 
 pub fn try_place(
-    blueprint: &mut Vec<ModuleSpec>,
+    blueprint: &mut Vec<Module>,
     credits: &mut i32,
     gx: i32,
     gy: i32,
@@ -129,41 +129,81 @@ pub fn try_place(
         return -5;
     }
 
-    let (cost, max_hp, mass) = kind.stats();
+    let (cost, _, _) = kind.stats();
     if *credits < cost {
         return -6;
     }
 
     *credits -= cost;
     let id = blueprint.len() as i32;
-    blueprint.push(ModuleSpec {
-        gx,
-        gy,
-        kind,
-        dir: geom::normalize_deg(dir),
-        max_hp,
-        mass,
-    });
+    blueprint.push(Module::new(gx, gy, kind, dir));
     id
 }
 
-pub fn compute_mobility(blueprint: &[ModuleSpec], states: &[ModuleState]) -> (f32, f32) {
+pub fn count_alive(modules: &[Module], kind: ModuleKind) -> usize {
+    modules
+        .iter()
+        .filter(|m| m.is_alive() && m.kind == kind)
+        .count()
+}
+
+pub fn has_radar(modules: &[Module]) -> bool {
+    count_alive(modules, ModuleKind::Radar) > 0
+}
+
+pub fn min_cannon_cd(modules: &[Module]) -> f32 {
+    modules
+        .iter()
+        .filter(|m| m.is_alive() && m.kind == ModuleKind::Cannon)
+        .map(|m| m.cooldown)
+        .reduce(f32::min)
+        .unwrap_or(99.0)
+}
+
+pub struct ModuleState {
+    pub hp: f32,
+    pub cooldown: f32,
+}
+
+pub fn default_blueprint() -> Vec<Module> {
+    [
+        (0, 0, ModuleKind::Core, 0.0),
+        (-1, 0, ModuleKind::Thruster, 180.0),
+        (1, 0, ModuleKind::Cannon, 0.0),
+        (0, 1, ModuleKind::Armor, 0.0),
+        (0, -1, ModuleKind::Armor, 0.0),
+        (-1, 1, ModuleKind::Radar, 0.0),
+    ]
+    .into_iter()
+    .map(|(gx, gy, kind, dir)| {
+        let (_, max_hp, mass) = kind.stats();
+        Module {
+            gx,
+            gy,
+            kind,
+            dir,
+            hp: max_hp,
+            max_hp,
+            mass,
+            cooldown: 0.0,
+        }
+    })
+    .collect()
+}
+
+pub fn compute_mobility(modules: &[Module]) -> (f32, f32) {
     let mut total_mass = 0.0_f32;
-    let mut thrust = 0.5_f32;
+    let mut thrust = 0.0_f32;
     let mut turn_power = 0.7_f32;
 
-    for (spec, st) in blueprint.iter().zip(states) {
-        if st.hp <= 0.0 {
-            continue;
-        }
-        total_mass += spec.mass;
-        if spec.kind == ModuleKind::Thruster {
+    for m in modules.iter().filter(|m| m.is_alive()) {
+        total_mass += m.mass;
+        if m.kind == ModuleKind::Thruster {
             thrust += 1.4;
-            let lever = ((spec.gx.pow(2) + spec.gy.pow(2)) as f32).sqrt().max(1.0);
+            let lever = ((m.gx.pow(2) + m.gy.pow(2)) as f32).sqrt().max(1.0);
             turn_power += 0.45 * lever;
         }
     }
-
     let mass_factor = (total_mass / 6.0).sqrt().max(0.75);
     (
         (thrust / mass_factor).clamp(0.35, 2.0),

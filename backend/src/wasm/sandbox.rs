@@ -1,11 +1,10 @@
 use anyhow::Result;
 use wasmtime::{
-    Config, Engine, Instance, Linker, Module, Store, StoreLimits, StoreLimitsBuilder, TypedFunc,
+    Config, Engine, Instance, Linker, Module as WasmModule, Store, StoreLimits, StoreLimitsBuilder,
+    TypedFunc,
 };
 
-use crate::arena::modules::{
-    ModuleSnapshot, ModuleSpec, STARTING_CREDITS, core_spec, default_blueprint,
-};
+use crate::arena::modules::{Module, ModuleKind, STARTING_CREDITS, default_blueprint};
 
 pub const BASE_FUEL_PER_TICK: u64 = 15_000;
 
@@ -17,7 +16,7 @@ pub struct BotInput {
     pub cooldown: f32,
     pub nearest_orb_angle: f32,
     pub enemies: Vec<(f32, f32)>,
-    pub modules: Vec<ModuleSnapshot>,
+    pub modules: Vec<Module>,
 }
 
 #[derive(Default)]
@@ -32,7 +31,7 @@ pub struct BotState {
     pub limits: StoreLimits,
     pub building: bool,
     pub credits: i32,
-    pub blueprint: Vec<ModuleSpec>,
+    pub blueprint: Vec<Module>,
     pub input: BotInput,
     pub output: BotOutput,
 }
@@ -40,7 +39,7 @@ pub struct BotState {
 pub struct BotRuntime {
     store: Store<BotState>,
     tick_fn: TypedFunc<(), ()>,
-    pub blueprint: Vec<ModuleSpec>,
+    pub blueprint: Vec<Module>,
     pub overheated_ticks: u32,
     pub last_fuel_used: u64,
     pub last_fuel_budget: u64,
@@ -58,13 +57,13 @@ impl BotRuntime {
         linker: &Linker<BotState>,
         wasm_bytes: &[u8],
     ) -> Result<Self> {
-        let module = Module::new(engine, wasm_bytes)?;
+        let module = WasmModule::new(engine, wasm_bytes)?;
         let limits = StoreLimitsBuilder::new()
             .memory_size(2 * 1024 * 1024)
             .instances(1)
             .build();
 
-        let core = core_spec();
+        let core = Module::new(0, 0, ModuleKind::Core, 0.0);
         let state = BotState {
             limits,
             building: true,

@@ -1,16 +1,25 @@
-use super::{
-    geom,
-    modules::{CELL_SIZE, ModuleKind, ModuleSnapshot, ModuleSpec, ModuleState, compute_mobility},
-    snapshot::{ArenaSnapshot, BotView, BulletView, ModuleView, OrbView},
-};
-
-use crate::wasm::{
-    host::create_linker,
-    sandbox::{BASE_FUEL_PER_TICK, BotInput, BotRuntime, BotState, create_engine},
-};
 use wasmtime::{Engine, Linker};
 
+use crate::{
+    arena::{
+        geom,
+        modules::{CELL_SIZE, Module, ModuleKind, compute_mobility, count_alive, min_cannon_cd},
+        snapshot::{ArenaSnapshot, BotView, BulletView, OrbView},
+    },
+    wasm::{
+        host::create_linker,
+        sandbox::{BASE_FUEL_PER_TICK, BotInput, BotRuntime, BotState, create_engine},
+    },
+};
+
 pub const ARENA_SIZE: f32 = 1000.0;
+
+fn random_spawn() -> (f32, f32) {
+    (
+        rand::random_range(100.0..900.0),
+        rand::random_range(100.0..900.0),
+    )
+}
 
 pub struct BotEntity {
     pub id: usize,
@@ -21,8 +30,7 @@ pub struct BotEntity {
     pub angle: f32,
     pub kills: u32,
     pub overclock_ticks: u32,
-    pub blueprint: Vec<ModuleSpec>,
-    pub modules: Vec<ModuleState>,
+    pub modules: Vec<Module>,
     pub runtime: BotRuntime,
     pub last_scans: Vec<(f32, f32)>,
 }
@@ -30,26 +38,6 @@ pub struct BotEntity {
 impl BotEntity {
     fn core_hp(&self) -> f32 {
         self.modules.first().map(|m| m.hp).unwrap_or(0.0)
-    }
-
-    fn reset_modules(&mut self) {
-        self.modules = self
-            .blueprint
-            .iter()
-            .map(|s| ModuleState {
-                hp: s.max_hp,
-                cooldown: 0.0,
-            })
-            .collect();
-        self.overclock_ticks = 0;
-    }
-
-    fn alive_reactors(&self) -> u64 {
-        self.blueprint
-            .iter()
-            .zip(&self.modules)
-            .filter(|(s, st)| st.hp > 0.0 && s.kind == ModuleKind::Reactor)
-            .count() as u64
     }
 
     fn to_view(&self) -> BotView {
@@ -66,18 +54,7 @@ impl BotEntity {
                 * 100.0,
             overheated: self.runtime.overheated_ticks > 0,
             scans: self.last_scans.clone(),
-            modules: self
-                .blueprint
-                .iter()
-                .zip(&self.modules)
-                .map(|(spec, st)| ModuleView {
-                    gx: spec.gx,
-                    gy: spec.gy,
-                    kind: spec.kind as u8,
-                    dir: spec.dir,
-                    hp_pct: (st.hp / spec.max_hp).clamp(0.0, 1.0),
-                })
-                .collect(),
+            modules: self.modules.iter().map(Module::to_view).collect(),
         }
     }
 }
@@ -124,32 +101,24 @@ impl World {
 
     pub fn spawn_bot(&mut self, name: &str, wasm_bytes: &[u8]) -> anyhow::Result<()> {
         let runtime = BotRuntime::from_bytes(&self.engine, &self.linker, wasm_bytes)?;
-        let blueprint = runtime.blueprint.clone();
-        let modules = blueprint
-            .iter()
-            .map(|s| ModuleState {
-                hp: s.max_hp,
-                cooldown: 0.0,
-            })
-            .collect();
-
+        let modules = runtime.blueprint.clone();
         let id = self.next_id;
         self.next_id += 1;
 
         let colors = [
             "#38bdf8", "#a855f7", "#f97316", "#ec4899", "#22d3ee", "#eab308",
         ];
+        let (x, y) = random_spawn();
 
         self.bots.push(BotEntity {
             id,
             name: name.to_string(),
             color: colors[id % colors.len()].to_string(),
-            x: rand::random_range(100.0..900.0),
-            y: rand::random_range(100.0..900.0),
+            x,
+            y,
             angle: rand::random_range(-180.0..180.0),
             kills: 0,
             overclock_ticks: 0,
-            blueprint,
             modules,
             runtime,
             last_scans: Vec::new(),
@@ -179,9 +148,9 @@ impl World {
 
         for bot in &mut self.bots {
             if bot.core_hp() <= 0.0 {
-                bot.reset_modules();
-                bot.x = rand::random_range(100.0..900.0);
-                bot.y = rand::random_range(100.0..900.0);
+                bot.modules.iter_mut().for_each(Module::reset);
+                bot.overclock_ticks = 0;
+                (bot.x, bot.y) = random_spawn();
             }
         }
 
@@ -211,10 +180,8 @@ impl World {
             self.bots.iter().map(|b| (b.id, b.x, b.y)).collect();
 
         for bot in &mut self.bots {
-            if bot.overclock_ticks > 0 {
-                bot.overclock_ticks -= 1;
-            }
-            let reactors = bot.alive_reactors();
+            bot.overclock_ticks = bot.overclock_ticks.saturating_sub(1);
+            let reactors = count_alive(&bot.modules, ModuleKind::Reactor) as u64;
             let cd_step =
                 1.0 + (reactors as f32 * 0.15) + if bot.overclock_ticks > 0 { 0.8 } else { 0.0 };
 
@@ -222,16 +189,7 @@ impl World {
                 m.cooldown = (m.cooldown - cd_step).max(0.0);
             }
 
-            let min_cd = bot
-                .blueprint
-                .iter()
-                .zip(&bot.modules)
-                .filter(|(s, st)| s.kind == ModuleKind::Cannon && st.hp > 0.0)
-                .map(|(_, st)| st.cooldown)
-                .reduce(f32::min)
-                .unwrap_or(99.0);
-
-            let enemies: Vec<(f32, f32)> = positions
+            let enemies = positions
                 .iter()
                 .filter(|(id, _, _)| *id != bot.id)
                 .map(|(_, x, y)| (*x, *y))
@@ -244,22 +202,10 @@ impl World {
                     geom::dist(bot.x, bot.y, a.x, a.y)
                         .total_cmp(&geom::dist(bot.x, bot.y, b.x, b.y))
                 })
-                .map(|o| geom::normalize_deg(geom::angle_to_deg(bot.x, bot.y, o.x, o.y)))
-                .unwrap_or(999.0);
-
-            let module_snaps = bot
-                .blueprint
-                .iter()
-                .zip(&bot.modules)
-                .map(|(s, st)| ModuleSnapshot {
-                    gx: s.gx,
-                    gy: s.gy,
-                    kind: s.kind,
-                    dir: s.dir,
-                    hp: st.hp,
-                    cooldown: st.cooldown,
+                .map(|o| {
+                    geom::normalize_deg(geom::angle_to_deg(bot.x, bot.y, o.x, o.y) - bot.angle)
                 })
-                .collect();
+                .unwrap_or(999.0);
 
             let fuel_budget = BASE_FUEL_PER_TICK
                 + reactors * 3_000
@@ -271,52 +217,42 @@ impl World {
                     x: bot.x,
                     y: bot.y,
                     angle: bot.angle,
-                    cooldown: min_cd,
+                    cooldown: min_cannon_cd(&bot.modules),
                     nearest_orb_angle,
                     enemies,
-                    modules: module_snaps,
+                    modules: bot.modules.clone(),
                 },
                 fuel_budget,
             );
 
-            let (speed_mul, turn_mul) = compute_mobility(&bot.blueprint, &bot.modules);
+            let (speed_mul, turn_mul) = compute_mobility(&bot.modules);
             bot.last_scans = out.scans;
             bot.angle = geom::normalize_deg(bot.angle + out.turn * 5.0 * turn_mul);
-            let rad = bot.angle.to_radians();
-
-            bot.x =
-                (bot.x + rad.cos() * out.speed * 4.5 * speed_mul).clamp(30.0, ARENA_SIZE - 30.0);
-            bot.y =
-                (bot.y + rad.sin() * out.speed * 4.5 * speed_mul).clamp(30.0, ARENA_SIZE - 30.0);
+            let (s, c) = bot.angle.to_radians().sin_cos();
+            bot.x = (bot.x + c * out.speed * 4.5 * speed_mul).clamp(30.0, ARENA_SIZE - 30.0);
+            bot.y = (bot.y + s * out.speed * 4.5 * speed_mul).clamp(30.0, ARENA_SIZE - 30.0);
 
             for idx in out.fired_modules {
-                if let (Some(spec), Some(st)) = (bot.blueprint.get(idx), bot.modules.get_mut(idx)) {
-                    if spec.kind == ModuleKind::Cannon && st.hp > 0.0 && st.cooldown <= 0.0 {
-                        st.cooldown = 15.0;
-                        let (mx, my) = geom::local_to_world(
-                            bot.x,
-                            bot.y,
-                            bot.angle,
-                            spec.gx as f32 * CELL_SIZE,
-                            spec.gy as f32 * CELL_SIZE,
-                        );
-                        let fire_rad = (bot.angle + spec.dir).to_radians();
-                        self.bullets.push(Bullet {
-                            owner_id: bot.id,
-                            x: mx + fire_rad.cos() * 12.0,
-                            y: my + fire_rad.sin() * 12.0,
-                            vx: fire_rad.cos() * 14.0,
-                            vy: fire_rad.sin() * 14.0,
-                            ttl: 70,
-                        });
-                    }
+                let (bx, by, angle) = (bot.x, bot.y, bot.angle);
+                if let Some(m) = bot.modules.get_mut(idx).filter(|m| m.is_ready_cannon()) {
+                    m.cooldown = 15.0;
+                    let (mx, my) = m.world_pos(bx, by, angle);
+                    let (fs, fc) = (angle + m.dir).to_radians().sin_cos();
+                    self.bullets.push(Bullet {
+                        owner_id: bot.id,
+                        x: mx + fc * 12.0,
+                        y: my + fs * 12.0,
+                        vx: fc * 14.0,
+                        vy: fs * 14.0,
+                        ttl: 70,
+                    });
                 }
             }
         }
     }
 
     fn step_bullets(&mut self, events: &mut Vec<String>) {
-        let mut alive: Vec<Bullet> = Vec::with_capacity(self.bullets.len());
+        let mut alive = Vec::with_capacity(self.bullets.len());
         for mut b in self.bullets.drain(..) {
             b.x += b.vx;
             b.y += b.vy;
@@ -332,14 +268,13 @@ impl World {
                 }
                 let (lx, ly) = geom::world_to_local(bot.x, bot.y, bot.angle, b.x, b.y);
                 let hit_mod = bot
-                    .blueprint
+                    .modules
                     .iter()
-                    .zip(bot.modules.iter())
                     .enumerate()
-                    .filter(|(_, (_, st))| st.hp > 0.0)
-                    .filter_map(|(idx, (s, _))| {
+                    .filter(|(_, m)| m.is_alive())
+                    .filter_map(|(idx, m)| {
                         let d =
-                            geom::dist(lx, ly, s.gx as f32 * CELL_SIZE, s.gy as f32 * CELL_SIZE);
+                            geom::dist(lx, ly, m.gx as f32 * CELL_SIZE, m.gy as f32 * CELL_SIZE);
                         (d <= CELL_SIZE * 0.68).then_some((idx, d))
                     })
                     .min_by(|a, b| a.1.total_cmp(&b.1));
@@ -347,13 +282,13 @@ impl World {
                 if let Some((idx, _)) = hit_mod {
                     bot.modules[idx].hp -= 20.0;
                     let core_dead = bot.core_hp() <= 0.0;
-                    let broken = bot.modules[idx].hp <= 0.0 && !core_dead;
+                    let broken = !bot.modules[idx].is_alive() && !core_dead;
                     hit = Some((
                         b.owner_id,
                         bot.name.clone(),
                         core_dead,
                         broken,
-                        bot.blueprint[idx].kind,
+                        bot.modules[idx].kind,
                     ));
                     break;
                 }
@@ -380,8 +315,8 @@ impl World {
             for bot in &mut self.bots {
                 if geom::dist(bot.x, bot.y, orb.x, orb.y) < 28.0 {
                     if orb.kind == "heal" {
-                        for (spec, st) in bot.blueprint.iter().zip(&mut bot.modules) {
-                            st.hp = (st.hp + spec.max_hp * 0.45).min(spec.max_hp);
+                        for m in &mut bot.modules {
+                            m.hp = (m.hp + m.max_hp * 0.45).min(m.max_hp);
                         }
                     } else {
                         bot.overclock_ticks = 180;
