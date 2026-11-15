@@ -1,4 +1,5 @@
 use anyhow::Result;
+use glam::Vec2;
 use wasmtime::{
     Config, Engine, Instance, Linker, Module as WasmModule, Store, StoreLimits, StoreLimitsBuilder,
     TypedFunc,
@@ -10,12 +11,11 @@ pub const BASE_FUEL_PER_TICK: u64 = 15_000;
 
 pub struct BotInput {
     pub hp: f32,
-    pub x: f32,
-    pub y: f32,
+    pub pos: Vec2,
     pub angle: f32,
     pub cooldown: f32,
     pub nearest_orb_angle: f32,
-    pub enemies: Vec<(f32, f32)>,
+    pub enemies: Vec<Vec2>,
     pub modules: Vec<Module>,
 }
 
@@ -71,8 +71,7 @@ impl BotRuntime {
             blueprint: vec![core],
             input: BotInput {
                 hp: core.max_hp,
-                x: 500.0,
-                y: 500.0,
+                pos: Vec2::splat(500.0),
                 angle: 0.0,
                 cooldown: 0.0,
                 nearest_orb_angle: 999.0,

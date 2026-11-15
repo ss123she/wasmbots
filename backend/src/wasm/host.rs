@@ -1,4 +1,5 @@
 use anyhow::Result;
+use glam::Vec2;
 use wasmtime::{Caller, Engine, Linker};
 
 use crate::{
@@ -26,8 +27,7 @@ fn try_fire(state: &mut BotState, idx: usize) -> i32 {
 
 fn scan_cone(
     state: &mut BotState,
-    ox: f32,
-    oy: f32,
+    origin: Vec2,
     offset_deg: f32,
     fov_deg: f32,
     max_range: f32,
@@ -36,9 +36,7 @@ fn scan_cone(
         .input
         .enemies
         .iter()
-        .filter_map(|&(tx, ty)| {
-            geom::in_cone(ox, oy, state.input.angle, offset_deg, fov_deg, tx, ty)
-        })
+        .filter_map(|&target| geom::in_cone(origin, state.input.angle, offset_deg, fov_deg, target))
         .filter(|&d| d <= max_range)
         .reduce(f32::min)
         .unwrap_or(-1.0);
@@ -81,8 +79,8 @@ pub fn create_linker(engine: &Engine) -> Result<Linker<BotState>> {
             let inp = &s.input;
             match stat {
                 0 => inp.hp,
-                1 => inp.x,
-                2 => inp.y,
+                1 => inp.pos.x,
+                2 => inp.pos.y,
                 3 => inp.angle,
                 4 => inp.cooldown,
                 5 => s.credits as f32,
@@ -154,8 +152,8 @@ pub fn create_linker(engine: &Engine) -> Result<Linker<BotState>> {
             } else {
                 250.0
             };
-            let (mx, my) = m.world_pos(state.input.x, state.input.y, state.input.angle);
-            scan_cone(state, mx, my, m.dir + offset_deg, fov_deg, max_range)
+            let origin = m.world_pos(state.input.pos, state.input.angle);
+            scan_cone(state, origin, m.dir + offset_deg, fov_deg, max_range)
         },
     )?;
 
@@ -169,8 +167,8 @@ pub fn create_linker(engine: &Engine) -> Result<Linker<BotState>> {
             } else {
                 250.0
             };
-            let (x, y) = (state.input.x, state.input.y);
-            scan_cone(state, x, y, offset_deg, fov_deg, max_range)
+            let origin = state.input.pos;
+            scan_cone(state, origin, offset_deg, fov_deg, max_range)
         },
     )?;
 

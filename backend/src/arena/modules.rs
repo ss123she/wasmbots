@@ -1,3 +1,5 @@
+use glam::Vec2;
+
 use super::{geom, snapshot::ModuleView};
 
 pub const GRID_RADIUS: i32 = 2;
@@ -76,14 +78,12 @@ impl Module {
         self.kind == ModuleKind::Cannon && self.is_alive() && self.cooldown <= 0.0
     }
 
-    pub fn world_pos(&self, bx: f32, by: f32, angle: f32) -> (f32, f32) {
-        geom::local_to_world(
-            bx,
-            by,
-            angle,
-            self.gx as f32 * CELL_SIZE,
-            self.gy as f32 * CELL_SIZE,
-        )
+    pub fn local_pos(&self) -> Vec2 {
+        Vec2::new(self.gx as f32, self.gy as f32) * CELL_SIZE
+    }
+
+    pub fn world_pos(&self, origin: Vec2, angle: f32) -> Vec2 {
+        geom::local_to_world(origin, angle, self.local_pos())
     }
 
     pub fn reset(&mut self) {
