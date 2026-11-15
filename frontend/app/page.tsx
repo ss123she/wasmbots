@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import ArenaScene, { ArenaSnapshot } from "./scene";
+import ArenaScene from "./scene";
+import { ArenaSnapshot } from "./types";
 
 function getApiBase() {
   return (

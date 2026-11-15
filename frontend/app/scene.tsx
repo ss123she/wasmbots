@@ -10,39 +10,7 @@ import {
   ToneMappingEffect,
   ToneMappingMode,
 } from "postprocessing";
-
-export interface BotView {
-  id: number;
-  name: string;
-  color: string;
-  x: number;
-  y: number;
-  angle: number;
-  hp: number;
-  kills: number;
-  cpu_pct: number;
-  overheated: boolean;
-  scans: [number, number][];
-}
-
-export interface BulletView {
-  x: number;
-  y: number;
-}
-
-export interface OrbView {
-  x: number;
-  y: number;
-  kind: string;
-}
-
-export interface ArenaSnapshot {
-  tick: number;
-  bots: BotView[];
-  bullets: BulletView[];
-  orbs: OrbView[];
-  events: string[];
-}
+import { ArenaSnapshot } from "./types";
 
 interface ArenaSceneProps {
   snapshot: ArenaSnapshot | null;
