@@ -27,3 +27,14 @@ pub fn in_cone(
         None
     }
 }
+
+pub fn local_to_world(bx: f32, by: f32, angle_deg: f32, lx: f32, ly: f32) -> (f32, f32) {
+    let (s, c) = angle_deg.to_radians().sin_cos();
+    (bx + lx * c - ly * s, by + lx * s + ly * c)
+}
+
+pub fn world_to_local(bx: f32, by: f32, angle_deg: f32, wx: f32, wy: f32) -> (f32, f32) {
+    let (dx, dy) = (wx - bx, wy - by);
+    let (s, c) = (-angle_deg).to_radians().sin_cos();
+    (dx * c - dy * s, dx * s + dy * c)
+}

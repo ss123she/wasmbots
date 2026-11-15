@@ -21,6 +21,7 @@ use tower_http::cors::CorsLayer;
 use crate::world::World;
 
 mod geom;
+mod modules;
 mod sandbox;
 mod world;
 
