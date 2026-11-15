@@ -38,3 +38,13 @@ pub fn world_to_local(bx: f32, by: f32, angle_deg: f32, wx: f32, wy: f32) -> (f3
     let (s, c) = (-angle_deg).to_radians().sin_cos();
     (dx * c - dy * s, dx * s + dy * c)
 }
+
+pub fn dist_to_segment(px: f32, py: f32, ax: f32, ay: f32, bx: f32, by: f32) -> f32 {
+    let (dx, dy) = (bx - ax, by - ay);
+    let len_sq = dx * dx + dy * dy;
+    if len_sq <= 1e-6 {
+        return dist(px, py, ax, ay);
+    }
+    let t = (((px - ax) * dx + (py - ay) * dy) / len_sq).clamp(0.0, 1.0);
+    dist(px, py, ax + t * dx, ay + t * dy)
+}

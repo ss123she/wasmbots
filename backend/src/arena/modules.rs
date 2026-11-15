@@ -31,12 +31,12 @@ impl ModuleKind {
     pub fn stats(self) -> (i32, f32, f32) {
         // (cost, max_hp, mass)
         match self {
-            Self::Core => (0, 60.0, 2.0),
-            Self::Armor => (10, 90.0, 2.5),
-            Self::Thruster => (20, 25.0, 1.0),
-            Self::Cannon => (30, 30.0, 1.5),
-            Self::Radar => (15, 20.0, 0.8),
-            Self::Reactor => (25, 25.0, 1.5),
+            Self::Core => (0, 50.0, 2.0),
+            Self::Armor => (10, 60.0, 2.5),
+            Self::Thruster => (20, 30.0, 1.0),
+            Self::Cannon => (30, 50.0, 1.5),
+            Self::Radar => (15, 25.0, 0.8),
+            Self::Reactor => (25, 30.0, 1.5),
         }
     }
 }
@@ -160,34 +160,17 @@ pub fn min_cannon_cd(modules: &[Module]) -> f32 {
         .unwrap_or(99.0)
 }
 
-pub struct ModuleState {
-    pub hp: f32,
-    pub cooldown: f32,
-}
-
 pub fn default_blueprint() -> Vec<Module> {
     [
         (0, 0, ModuleKind::Core, 0.0),
+        (1, 0, ModuleKind::Armor, 0.0),
+        (0, 1, ModuleKind::Cannon, 0.0),
         (-1, 0, ModuleKind::Thruster, 180.0),
-        (1, 0, ModuleKind::Cannon, 0.0),
-        (0, 1, ModuleKind::Armor, 0.0),
         (0, -1, ModuleKind::Armor, 0.0),
         (-1, 1, ModuleKind::Radar, 0.0),
     ]
     .into_iter()
-    .map(|(gx, gy, kind, dir)| {
-        let (_, max_hp, mass) = kind.stats();
-        Module {
-            gx,
-            gy,
-            kind,
-            dir,
-            hp: max_hp,
-            max_hp,
-            mass,
-            cooldown: 0.0,
-        }
-    })
+    .map(|(gx, gy, kind, dir)| Module::new(gx, gy, kind, dir))
     .collect()
 }
 

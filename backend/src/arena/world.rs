@@ -40,6 +40,18 @@ impl BotEntity {
         self.modules.first().map(|m| m.hp).unwrap_or(0.0)
     }
 
+    fn total_hp(&self) -> f32 {
+        self.modules.iter().map(|m| m.hp.max(0.0)).sum()
+    }
+
+    fn max_total_hp(&self) -> f32 {
+        self.modules.iter().map(|m| m.max_hp).sum()
+    }
+
+    fn is_dead(&self) -> bool {
+        self.core_hp() <= 0.0 || self.total_hp() <= self.max_total_hp() * 0.45
+    }
+
     fn to_view(&self) -> BotView {
         BotView {
             id: self.id,
@@ -143,11 +155,12 @@ impl World {
         }
 
         self.step_bots();
+        self.separate_bots();
         self.step_bullets(&mut events);
         self.step_orbs(&mut events);
 
         for bot in &mut self.bots {
-            if bot.core_hp() <= 0.0 {
+            if bot.is_dead() {
                 bot.modules.iter_mut().for_each(Module::reset);
                 bot.overclock_ticks = 0;
                 (bot.x, bot.y) = random_spawn();
@@ -240,8 +253,8 @@ impl World {
                     let (fs, fc) = (angle + m.dir).to_radians().sin_cos();
                     self.bullets.push(Bullet {
                         owner_id: bot.id,
-                        x: mx + fc * 12.0,
-                        y: my + fs * 12.0,
+                        x: mx + fc * 4.0,
+                        y: my + fs * 4.0,
                         vx: fc * 14.0,
                         vy: fs * 14.0,
                         ttl: 70,
@@ -254,6 +267,7 @@ impl World {
     fn step_bullets(&mut self, events: &mut Vec<String>) {
         let mut alive = Vec::with_capacity(self.bullets.len());
         for mut b in self.bullets.drain(..) {
+            let (prev_x, prev_y) = (b.x, b.y);
             b.x += b.vx;
             b.y += b.vy;
             if b.ttl == 0 || b.x < 0.0 || b.x > ARENA_SIZE || b.y < 0.0 || b.y > ARENA_SIZE {
@@ -266,22 +280,24 @@ impl World {
                 if bot.id == b.owner_id || geom::dist(b.x, b.y, bot.x, bot.y) > 40.0 {
                     continue;
                 }
-                let (lx, ly) = geom::world_to_local(bot.x, bot.y, bot.angle, b.x, b.y);
+                let (ax, ay) = geom::world_to_local(bot.x, bot.y, bot.angle, prev_x, prev_y);
+                let (bx, by) = geom::world_to_local(bot.x, bot.y, bot.angle, b.x, b.y);
+
                 let hit_mod = bot
                     .modules
                     .iter()
                     .enumerate()
                     .filter(|(_, m)| m.is_alive())
                     .filter_map(|(idx, m)| {
-                        let d =
-                            geom::dist(lx, ly, m.gx as f32 * CELL_SIZE, m.gy as f32 * CELL_SIZE);
-                        (d <= CELL_SIZE * 0.68).then_some((idx, d))
+                        let (cx, cy) = (m.gx as f32 * CELL_SIZE, m.gy as f32 * CELL_SIZE);
+                        let d_seg = geom::dist_to_segment(cx, cy, ax, ay, bx, by);
+                        (d_seg <= CELL_SIZE * 0.72).then_some((idx, geom::dist(ax, ay, cx, cy)))
                     })
                     .min_by(|a, b| a.1.total_cmp(&b.1));
 
                 if let Some((idx, _)) = hit_mod {
                     bot.modules[idx].hp -= 20.0;
-                    let core_dead = bot.core_hp() <= 0.0;
+                    let core_dead = bot.is_dead();
                     let broken = !bot.modules[idx].is_alive() && !core_dead;
                     hit = Some((
                         b.owner_id,
@@ -315,7 +331,7 @@ impl World {
             for bot in &mut self.bots {
                 if geom::dist(bot.x, bot.y, orb.x, orb.y) < 28.0 {
                     if orb.kind == "heal" {
-                        for m in &mut bot.modules {
+                        for m in &mut bot.modules.iter_mut().filter(|m| m.is_alive()) {
                             m.hp = (m.hp + m.max_hp * 0.45).min(m.max_hp);
                         }
                     } else {
@@ -327,5 +343,28 @@ impl World {
             }
             true
         });
+    }
+
+    fn separate_bots(&mut self) {
+        let min_dist = 34.0_f32;
+        for i in 0..self.bots.len() {
+            for j in (i + 1)..self.bots.len() {
+                let (ax, ay) = (self.bots[i].x, self.bots[i].y);
+                let (bx, by) = (self.bots[j].x, self.bots[j].y);
+                let d = geom::dist(ax, ay, bx, by);
+                if d < min_dist {
+                    let (nx, ny) = if d > 1e-4 {
+                        ((bx - ax) / d, (by - ay) / d)
+                    } else {
+                        (1.0, 0.0)
+                    };
+                    let push = (min_dist - d) * 0.5;
+                    self.bots[i].x = (ax - nx * push).clamp(30.0, ARENA_SIZE - 30.0);
+                    self.bots[i].y = (ay - ny * push).clamp(30.0, ARENA_SIZE - 30.0);
+                    self.bots[j].x = (bx + nx * push).clamp(30.0, ARENA_SIZE - 30.0);
+                    self.bots[j].y = (by + ny * push).clamp(30.0, ARENA_SIZE - 30.0);
+                }
+            }
+        }
     }
 }
