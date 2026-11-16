@@ -1,6 +1,7 @@
 # WASM Bot Arena
 
 3D-Arena with bots, compiled to WASM, that fight each other.
+Link: https://ss123she.github.io/wasmbots
 
 <img width="1904" height="956" alt="image" src="https://github.com/user-attachments/assets/8f5b3e04-39b8-4a30-b297-c5a70c71bc6d" />
 
